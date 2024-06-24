@@ -1,0 +1,139 @@
+---
+title: "Electrode Processing"
+format: html
+editor: visual
+jupyter: python3
+---
+
+Description: After the LeGUI results have been extracted in MATLAB and saved to an XLSX file, this script will further format the results, merge with the YBA dictionary, and then save it to CSV for further use in electrode selection and visualization.
+
+## Configuration
+
+```{r, setup, include = FALSE}
+knitr::opts_knit$set(root.dir = 'Z:/Layton/Sleep_083023')
+```
+
+```{r}
+library(readxl)
+```
+
+## Parameters
+
+```{r}
+# input_file <- 'Cache/Subject01/S01_electrodes.xlsx'
+# output_file <- 'Cache/Subject01/S01_electrodes.csv'
+# MNI152_file <- 'Cache/Subject01/S01_electrodes_MNI152.csv'
+
+input_file <- 'Cache/Subject02/S02_electrodes.xlsx'
+output_file <- 'Cache/Subject02/S02_electrodes.csv'
+MNI152_file <- 'Cache/Subject02/S02_electrodes_MNI152.csv'
+```
+
+```{r}
+yba_dictionary <- 'Data/atlas_yba_dictionary.csv'
+roi_dictionary <- 'Data/atlas_yba_to_roi.csv'
+```
+
+## Munging
+
+```{r}
+# Load data
+d <- read_excel(input_file)
+
+core_vars <- c('elec_label', 'elec_num', 
+               'mni_x', 'mni_y', 'mni_z')
+
+d <- d[, c(core_vars, 'type', 'NMM', 'NMM_prob', 
+           'YBA', 'YBA_prob', 'YBA_2nd_label',
+           'YBA_2nd_prob')]
+
+# Remove the double quotes from YBA ROI labels
+d$YBA <- gsub('"', '', d$YBA)
+d$YBA_2nd_label <- gsub('"', '', d$YBA_2nd_label)
+
+# Replace YBA first place picks with second place
+# picks in cases where the first place was "Clear Label"
+d$clear_label <- ifelse(d$YBA == 'Clear Label', 
+                        TRUE, 
+                        FALSE)
+
+d$YBA <- ifelse(d$clear_label == TRUE, 
+                d$YBA_2nd_label, 
+                d$YBA)
+
+d$YBA_prob <- ifelse(d$clear_label == TRUE, 
+                     d$YBA_2nd_prob, 
+                     d$YBA_prob)
+
+d <- d[, c(core_vars, 'type', 'NMM', 'NMM_prob', 
+           'YBA', 'YBA_prob', 'clear_label')]
+
+# Set acceptance criteria
+d$status <- ifelse((d$clear_label == FALSE) | 
+                     (d$type == 'Gray'), 
+                   'accept', 
+                   'reject')
+d$status <- factor(d$status)
+
+d <- d[, c(core_vars, 'YBA', 'YBA_prob', 'status')]
+
+# Remove rows with NaN YBA ROI Label
+d <- d[!is.na(d$YBA),]
+
+# Create a "micro" indicator column
+d$type <- ifelse(grepl('_micro', d$elec_label), 
+                 'micro', 
+                 'macro')
+
+# Replace "_C_" with "_CG_" because the cingulate
+# ROI's are incorrectly labeled on the YBA ITK-SnAP:
+d$YBA <- gsub('_C_', '_CG_', d$YBA)
+```
+
+## Merge with manual labels
+
+```{r}
+# Load YBA labels
+dict <- read.csv(yba_dictionary)
+dict$index <- NULL
+
+# Remove periods from YBA ROI labels
+# because MATLAB removes them on export:
+dict$code <- gsub('\\.', '', dict$code)
+
+d <- merge(d, dict, by.x = 'YBA', by.y = 'code')
+rm(dict)
+```
+
+```{r}
+# Load custom ROI's
+dict <- read.csv(roi_dictionary)
+dict$index <- NULL
+
+# Remove periods:
+dict$code <- gsub('\\.', '', dict$code)
+
+d <- merge(d, dict, by.x = 'YBA', by.y = 'code')
+rm(dict)
+```
+
+## Export
+
+```{r}
+# Export for general analysis
+write.csv(d, output_file, row.names = FALSE)
+```
+
+```{r}
+# Export for threeBrain visualization
+tb <- d[,c('elec_num', 'mni_x', 'mni_y', 'mni_z', 
+           'elec_label', 'YBA', 'type', 'status', 
+           'region', 'gyrus', 'roi_1', 'roi_2')]
+
+colnames(tb) <- c('Electrode', 'MNI152_x', 'MNI152_y',
+                  'MNI152_z', 'Label', 'ROI', 'type', 
+                  'status', 'region', 'gyrus', 
+                  'roi_1', 'roi_2')
+
+write.csv(tb, MNI152_file, row.names = FALSE)
+```

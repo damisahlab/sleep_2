@@ -1,0 +1,179 @@
+---
+title: "1.9 - Waveform Plots"
+format: pdf
+editor: visual
+---
+
+## Configuration
+
+```{r, setup, include = FALSE}
+knitr::opts_knit$set(root.dir = 'Z:/Layton/Sleep_083023')
+```
+
+```{r}
+library(tidyverse)
+```
+
+## Parameters
+
+```{r}
+data <- read.csv('Cache/Subject01/Feb02/S01_event_epochs.csv')
+
+sw_facet_path <- 'Results/S01_sw_facet.svg'
+kc_facet_path <- 'Results/S01_kc_facet.svg'
+
+sw_wave_path <- 'Results/S01_sw_waveform.svg'
+kc_wave_path <- 'Results/S01_kc_waveform.svg'
+
+sw_rds_path <- 'Cache/Subject01/Feb02/sw_waveform.RDS'
+```
+
+## Munging
+
+```{r}
+sw_data <-
+  data %>%
+  filter(condition == 'slow_wave')
+
+kc_data <- 
+  data %>%
+  filter(condition == 'k_complex')
+```
+
+## Facet Plots
+
+Slow Waves
+
+```{r}
+ggplot(sw_data, aes(x = time, y = value)) +
+  geom_line(alpha = 0.25) + 
+  facet_wrap(channel ~ .) + 
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  coord_cartesian(xlim = c(-2, 2), 
+                  ylim = c(-300, 300)) + 
+  labs(x = 'Time (s)', 
+       y = 'Amplitude (uV)') +
+  theme_minimal() + 
+  theme(legend.position = 'None',
+        panel.spacing = unit(0.2, 'lines'), 
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        axis.ticks = element_line(size = 0.4),
+        strip.text = element_text(size = 8),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black', 
+                                    fill = NA, 
+                                    size = 1))
+
+ggsave(file = sw_facet_path, 
+       width = 12, height = 12, dpi = 300)
+```
+
+K-Complexes
+
+```{r}
+ggplot(kc_data, aes(x = time, y = value)) +
+  geom_line(alpha = 0.25) + 
+  facet_wrap(channel ~ .) + 
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  coord_cartesian(xlim = c(-2, 2), 
+                  ylim = c(-300, 300)) + 
+  labs(x = 'Time (s)', 
+       y = 'Amplitude (uV)') +
+  theme_minimal() + 
+  theme(legend.position = 'None',
+        panel.spacing = unit(0.2, 'lines'), 
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        axis.ticks = element_line(size = 0.4),
+        strip.text = element_text(size = 8),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black', 
+                                    fill = NA, 
+                                    size = 1))
+
+ggsave(file = kc_facet_path, 
+       width = 10, height = 10, dpi = 300)
+```
+
+## Unfaceted Plots
+
+Slow Waves
+
+```{r}
+sw_wave_plot <- 
+  ggplot(sw_data, aes(x = time, y = value)) +
+  geom_line(aes(group = channel),
+            alpha = 0.25) + 
+  scale_x_continuous(expand = c(0, 0),
+                     breaks = c(0, 0.5)) +
+  scale_y_continuous(expand = c(0, 0),
+                     breaks = c(-150, 0, 150)) +
+  coord_cartesian(xlim = c(-0.4, 1), 
+                  ylim = c(-250, 250)) + 
+  labs(x = 'Time (s)', 
+       y = 'Amplitude (uV)') +
+  theme_minimal() + 
+  theme(legend.position = 'None',
+        panel.spacing = unit(0.2, 'lines'), 
+        axis.title = element_text(size = 20),
+        axis.text = element_text(size = 18),
+        axis.ticks = element_line(size = 0.4),
+        strip.text = element_text(size = 8),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black', 
+                                    fill = NA, 
+                                    size = 1))
+```
+
+```{r}
+# Save as RDS object for later alignment
+saveRDS(sw_wave_plot, file = sw_rds_path) 
+
+# Save SVG without legend
+sw_wave_plot
+ggsave(file = sw_wave_path, 
+       width = 6, height = 5, dpi = 300)
+```
+
+K-Complexes
+
+```{r}
+ggplot(kc_data, aes(x = time, y = value)) +
+  geom_line(aes(group = channel),
+            alpha = 0.25) + 
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  coord_cartesian(xlim = c(-2, 2), 
+                  ylim = c(-300, 300)) + 
+  labs(x = 'Time (s)', 
+       y = 'Amplitude (uV)') +
+  theme_minimal() + 
+  theme(legend.position = 'None',
+        panel.spacing = unit(0.2, 'lines'), 
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        axis.ticks = element_line(size = 0.4),
+        strip.text = element_text(size = 8),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black', 
+                                    fill = NA, 
+                                    size = 1))
+
+ggsave(file = kc_wave_path, 
+       width = 6, height = 5, dpi = 300)
+```

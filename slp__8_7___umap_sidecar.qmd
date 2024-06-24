@@ -1,0 +1,206 @@
+---
+title: "UMAP"
+format: html
+editor: visual
+jupyter: python3
+---
+
+## Configuration
+
+```{r, setup, include = FALSE}
+knitr::opts_knit$set(root.dir = 'G:/My Drive/Residency/Research/Lab - Damisah/Project - Sleep/Revisions')
+```
+
+```{r}
+library(tidyverse)
+library(umap)
+library(grid)
+library(gridExtra)
+library(cowplot)
+```
+
+## Parameters
+
+```{r}
+# spike_epoch_path <- 'Data/S01_Feb02_epochs_10s_spikes.csv'
+# swa_epoch_path <- 'Data/S01_Feb02_epochs_10s_swa.csv'
+# cluster_path <- 'Data/S01_Feb02_hdbscan_spike_10s.csv'
+# dictionary_path <- 'Data/S01_electrodes.csv'
+# output_path <- 'Results/S01_Feb02_cluster_timelines.svg'
+
+# spike_epoch_path <- 'Data/S05_Jul11_epochs_10s_spikes.csv'
+# swa_epoch_path <- 'Data/S05_Jul11_epochs_10s_swa.csv'
+# cluster_path <- 'Data/S05_Jul11_hdbscan_spike_10s.csv'
+# dictionary_path <- 'Data/S05_electrodes.csv'
+# output_path <- 'Results/S05_Jul11_cluster_timelines.svg'
+
+# spike_epoch_path <- 'Data/S05_Jul12_epochs_10s_spikes.csv'
+# swa_epoch_path <- 'Data/S05_Jul12_epochs_10s_swa.csv'
+# cluster_path <- 'Data/S05_Jul12_hdbscan_spike_10s.csv'
+# dictionary_path <- 'Data/S05_electrodes.csv'
+# output_path <- 'Results/S05_Jul12_cluster_timelines.svg'
+
+spike_epoch_path <- 'Data/S05_Jul13_epochs_10s_spikes.csv'
+swa_epoch_path <- 'Data/S05_Jul13_epochs_10s_swa.csv'
+cluster_path <- 'Data/S05_Jul13_hdbscan_spike_10s.csv'
+dictionary_path <- 'Data/S05_electrodes.csv'
+output_path <- 'Results/S05_Jul13_cluster_timelines.svg'
+```
+
+```{r}
+unit_regions <- c('CLA', 'ACC', 'AMY')
+```
+
+## SWA Munging and Plotting
+
+```{r}
+dict <- read.csv(dictionary_path) %>%
+  select(elec_label, lobe_1)
+
+# Average SWA by lobe, then average lobes into global
+swa <- 
+  read.csv(swa_epoch_path) %>%
+  select(epoch, channel, zlog_power) %>%
+  merge(dict, by.x = 'channel', by.y = 'elec_label') %>%
+  group_by(epoch, lobe_1) %>%
+  summarise(power = mean(zlog_power, na.rm = TRUE)) %>%
+  ungroup() %>% 
+  group_by(epoch) %>%
+  summarise(power = mean(power))
+
+# Apply Gaussian kernel smoothing
+swa <- ksmooth(swa$epoch, swa$power, kernel = 'normal', bandwidth = 10)
+swa <- data.frame(time = swa$x, power = swa$y)
+```
+
+```{r}
+p_swa <- 
+  ggplot(swa, aes(x = time, y = power)) +
+  geom_rect(aes(xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf),
+            fill = '#D2DDEE', alpha = 0.05, inherit.aes = FALSE) +
+  geom_hline(aes(yintercept = 0), 
+             color = 'gray50', linetype = 'dotted', size = 0.25) + 
+  geom_line(color = '#335289', size = 1) + 
+  scale_x_continuous(expand = c(0, 0)) + 
+  labs(y = 'Global SWA') +
+  theme_minimal() + 
+  theme(legend.title = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 10),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black', 
+                                    fill = NA, 
+                                    size = 1))
+
+p_swa
+```
+
+## Spike Munging and Plotting
+
+```{r}
+# Load cluster information
+cluster_data <- 
+  read.csv(cluster_path) %>%
+  select(unit_id, unit_region, cluster, cluster_shape)
+
+# Quantify CLA cluster membership
+unit_membership <- cluster_data %>%
+  count(cluster, unit_region) %>%  
+  pivot_wider(names_from = unit_region, 
+              values_from = n,
+              values_fill = list(n = 0)) %>%
+  mutate(total = CLA + AMY + ACC) %>%
+  mutate(caption = paste(CLA, total, sep = ' / ')) %>%
+  select(cluster, caption)
+
+# Load spike epochs, normalize, merge with cluster info, and average FR by cluster
+spike_data <- 
+  read.csv(spike_epoch_path) %>%
+  filter(unit_region %in% unit_regions) %>%
+  group_by(unit_id) %>%
+  mutate(fr = scale(fr, center = TRUE, scale = TRUE)) %>%
+  ungroup() %>% 
+  left_join(cluster_data, by = 'unit_id') %>%
+  group_by(cluster, cluster_shape, epoch) %>%
+  summarise(fr = mean(fr, na.rm = TRUE))
+
+# Apply Gaussian kernel smoothing
+smooth_data <- data.frame()
+unique_clusters <- unique(spike_data$cluster)
+
+for (cluster_num in unique_clusters) {
+  temp_data <- spike_data %>% 
+    filter(cluster == cluster_num)
+  
+  smoothed <- ksmooth(temp_data$epoch, 
+                      temp_data$fr, 
+                      kernel = "normal", 
+                      bandwidth = 10)
+  smoothed_df <- data.frame(cluster = cluster_num,
+                            epoch = smoothed$x,
+                            fr_smooth = smoothed$y)
+  
+  # Recover meta-data
+  temp_data <- left_join(temp_data, smoothed_df, by = c("cluster", "epoch"))
+  
+  smooth_data <- rbind(smooth_data, temp_data)
+}
+
+# Remove unclusterable units
+#smooth_data <- smooth_data %>% filter(cluster != 0)
+```
+
+```{r}
+# Summarize data to get one row per cluster with fixed coordinates for annotation
+annotation_data <- smooth_data %>%
+  distinct(cluster, cluster_shape) %>%
+  merge(unit_membership, by = 'cluster') %>%
+  mutate(x_shape = max(smooth_data$epoch) * 0.05, 
+         y_shape = max(smooth_data$fr_smooth) * 0.8,
+         x_caption = max(smooth_data$epoch) * 0.15,
+         y_caption = max(smooth_data$fr_smooth) * 0.8)
+
+# Plot
+p_clusters <- 
+  ggplot(smooth_data, aes(x = epoch, y = fr_smooth)) +
+  geom_hline(yintercept = 0, color = 'gray50', linetype = 'dotted', size = 0.25) + 
+  geom_line(color = 'gray50', size = 1) +
+  scale_x_continuous(expand = c(0, 0)) + 
+  facet_wrap(~ cluster, ncol = 1) + 
+  labs(y = 'FR') +
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 10),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black', fill = NA, size = 1),
+        strip.text = element_blank())  # Remove facet labels
+
+# Add annotations with shapes
+p_clusters <- p_clusters +
+  geom_point(data = annotation_data, 
+             aes(x = x_shape, y = y_shape, shape = cluster_shape), 
+             size = 5) +
+  geom_text(data = annotation_data, 
+          aes(x = x_caption, y = y_caption, label = caption)) +
+  scale_shape_identity()
+
+p_clusters
+```
+
+## Combined Plot
+
+```{r}
+p_combined <- plot_grid(p_swa, p_clusters, 
+                        ncol = 1, 
+                        rel_heights = c(1, 2), # 2, 3
+                        align = 'v')
+
+p_combined
+
+ggsave(output_path, plot = p_combined, width = 5, height = 4, bg = 'white')
+```

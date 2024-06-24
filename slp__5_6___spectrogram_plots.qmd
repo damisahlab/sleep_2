@@ -1,0 +1,215 @@
+---
+title: "Channel Spectrograms"
+format: html
+editor: visual
+jupyter: python3
+---
+
+## Configuration
+
+```{r, setup, include = FALSE}
+knitr::opts_knit$set(root.dir = 'G:/My Drive/Residency/Research/Lab - Damisah/Project - Sleep')
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(viridis)
+library(wesanderson)
+```
+
+## Parameters
+
+```{r}
+tfr_path <- 'Cache/Subject01/S01_tfr_30s_epochs.csv'
+facet_path <- 'Results/S01_channel_spectrogram.svg'
+iceeg_path <- 'Results/S01_iceeg_spectrogram.svg'
+scalp_path <- 'Results/S01_scalp_spectrogram.svg'
+iceeg_rds_path <- 'Cache/Subject01/S01_iceeg_spectrogram.RDS'
+scalp_rds_path <- 'Cache/Subject01/S01_scalp_spectrogram.RDS'
+example_channel <- 'ROF1'
+
+# tfr_path <- 'Cache/Subject02/Apr26/S02_tfr_30s_epochs.csv'
+# facet_path <- 'Results/S02_Apr26_channel_spectrogram.svg'
+# iceeg_path <- 'Results/S01_Apr26_iceeg_spectrogram.svg'
+# scalp_path <- 'Results/S01_Apr26_scalp_spectrogram.svg'
+# iceeg_rds_path <- 'Cache/Subject02/Apr26/S02_iceeg_spectrogram.RDS'
+# scalp_rds_path <- 'Cache/Subject02/Apr26/S02_scalp_spectrogram.RDS'
+# example_channel <- 'LAI2'
+
+# tfr_path <- 'Cache/Subject02/Apr27/S02_tfr_30s_epochs.csv'
+# facet_path <- 'Results/S02_Apr27_channel_spectrogram.svg'
+# iceeg_path <- 'Results/S01_Apr27_iceeg_spectrogram.svg'
+# scalp_path <- 'Results/S01_Apr27_scalp_spectrogram.svg'
+# iceeg_rds_path <- 'Cache/Subject02/Apr27/S02_iceeg_spectrogram.RDS'
+# scalp_rds_path <- 'Cache/Subject02/Apr27/S02_scalp_spectrogram.RDS'
+# example_channel <- 'LAI2'
+```
+
+## Munging
+
+```{r}
+tfr <- read.csv(tfr_path)
+
+tfr <- 
+  tfr %>%
+  mutate(minutes = ((epoch + 1) * 30) / 60) %>%
+  select(channel, minutes, frequency, 
+         logmpower_freq, logpower_freq, 
+         lmpf_zscore, lpf_zscore) %>%
+  drop_na() # drop scalp leads if present
+```
+
+## Plotting (all icEEG)
+
+```{r}
+scale_min <- -5; scale_max <- 5
+
+ggplot(tfr[tfr$channel != 'C4',], 
+       aes(x = minutes, y = frequency)) +
+  geom_raster(aes(fill = lpf_zscore),
+              interpolate = TRUE) +
+  scale_fill_gradientn(colors = c('blue', 'white', 'red'),
+                       limit = c(scale_min, scale_max),
+                       oob = scales::squish) + 
+  facet_wrap(vars(channel), ncol = 3) + 
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = 'Time (s)', 
+       y = 'Frequency (Hz)', 
+       fill = 'Log Power\n(Z-Score)') +
+  theme_minimal() + 
+  theme(panel.spacing = unit(0.2, 'lines'), 
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        axis.ticks = element_line(size = 0.4),
+        strip.text = element_text(size = 12),
+        legend.text = element_text(size = 10),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black', 
+                                    fill = NA, 
+                                    size = 1))
+```
+
+```{r}
+ggsave(file = facet_path, width = 12, height = 15, 
+       dpi = 300, limitsize = FALSE)
+```
+
+## Plotting (Single icEEG - ROF1)
+
+```{r}
+scale_min <- -5; scale_max <- 5
+
+wa_palette <- wes_palette("Zissou1", 100, 
+                          type = "continuous")
+
+iceeg_plot <- 
+  ggplot(tfr[tfr$channel == example_channel,], 
+       aes(x = minutes, y = frequency)) +
+  geom_raster(aes(fill = logmpower_freq),
+              alpha = 0.75, interpolate = TRUE) +
+  scale_fill_gradientn(colors = c('blue', 'white', 'red'),
+                     limit = c(scale_min, scale_max),
+                     oob = scales::squish) + 
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(breaks = c(5, 10, 15, 20),
+                     expand = c(0, 0)) +
+  labs(y = 'icEEG', 
+       fill = 'Log Power (dB)') +
+  theme_minimal() + 
+  theme(legend.text = element_text(size = 10),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 13),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_line(size = 0.3),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black', 
+                                    fill = NA, 
+                                    size = 1))
+```
+
+```{r}
+# Save as RDS object for later alignment
+saveRDS(iceeg_plot, file = iceeg_rds_path) 
+
+# Save SVG without legend
+p <- iceeg_plot + theme(legend.position = 'none')
+p
+
+ggsave(file = iceeg_path, width = 10, height = 1.5, 
+       dpi = 300, limitsize = FALSE)
+```
+
+## Plotting (Scalp C4)
+
+```{r}
+scale_min <- -6; scale_max <- 6
+
+wa_palette <- wes_palette("Zissou1", 100, 
+                          type = "continuous")
+
+scalp_plot <- 
+  ggplot(tfr[tfr$channel == 'C4',], 
+       aes(x = minutes, y = frequency)) +
+  geom_raster(aes(fill = logmpower_freq),
+              alpha = 0.75,
+              # tile blurring:
+              interpolate = TRUE) +
+  #scale_fill_viridis(option = 'magma',
+  #                   limit = c(scale_min, scale_max),
+  #                   oob = scales::squish) + 
+  #scale_fill_gradientn(colors = wa_palette,
+  #                     limit = c(scale_min, scale_max),
+  #                     oob = scales::squish) +
+  #scale_fill_gradientn(colors = c('white', 
+  #                                '#ebcc2a', 
+  #                                '#f22300'),
+  #                     # values must be between 0 - 1:
+  #                     values = c(0, 0.5, 1),
+  #                     limit = c(scale_min, scale_max),
+  #                     oob = scales::squish) + 
+  #scale_fill_gradientn(colors = c('#4a72af',
+  #                                '#7cb7b1', 
+  #                                '#dfe176'),
+  #                 limit = c(scale_min, scale_max),
+  #                 oob = scales::squish) + 
+  scale_fill_gradientn(colors = c('black', 'red', 'yellow'),
+                     limit = c(scale_min, scale_max),
+                     oob = scales::squish) + 
+  #scale_fill_gradientn(colors = c('white', 'black'),
+  #                     limit = c(scale_min, scale_max),
+  #                     oob = scales::squish) + 
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(breaks = c(5, 10, 15, 20),
+                     expand = c(0, 0)) +
+  labs(y = 'Scalp', 
+       fill = 'Log Power (dB)') +
+  theme_minimal() + 
+  theme(legend.text = element_text(size = 10),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 13),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_line(size = 0.3),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black', 
+                                    fill = NA, 
+                                    size = 1))
+```
+
+```{r}
+# Save as RDS object for later alignment
+saveRDS(scalp_plot, file = scalp_rds_path) 
+
+# Save SVG without legend
+p <- scalp_plot + theme(legend.position = 'none')
+p
+
+ggsave(file = scalp_path, width = 10, height = 1.5, 
+       dpi = 300, limitsize = FALSE)
+```

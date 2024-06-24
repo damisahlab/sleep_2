@@ -1,0 +1,106 @@
+---
+title: "MNI152 to MNI305 to tkrRAS"
+format: html
+editor: visual
+jupyter: python3
+---
+
+## Configuration
+
+```{r, setup, include = FALSE}
+knitr::opts_knit$set(root.dir = 'G:/My Drive/Residency/Research/Lab - Damisah/Project - Sleep')
+```
+
+```{r}
+library(tidyverse)
+library(threeBrain)
+library(raveio)
+```
+
+## Parameters
+
+```{r}
+elec_file <- 'Cache/Subject01/S01_electrodes_MNI152.csv'
+
+output_path <- 'Cache/Subject01/S01_electrodes_tkrRAS.csv'
+```
+
+## Import N27 brain template
+
+threeBrain only comes with one brain template, the N27 from Freesurfer. You can download a few other templates from the threeBrain GitHub but otherwise you will need to add them manually into the folder specified by default_template_directory().
+
+Download templates if you have not done so:
+
+```{r}
+#download_template_subject('N27')
+#download_template_subject('fsaverage')
+#download_template_subject('cvs_avg35_inMNI152')
+
+#default_template_directory()
+#set_default_template('N27')
+```
+
+Initialize template brain:
+
+```{r}
+template_path <- file.path(default_template_directory(),
+                           'N27')
+
+# freesurfer_brain2() will eventually be deprecated by threeBrain()
+brain <- freesurfer_brain2(
+  fs_subject_folder = template_path,
+  subject_name = 'N27', 
+  surface_types = c('pial',
+                    'white',
+                    'smoothwm'),
+  atlas_types = c('aparc.DKTatlas+aseg')
+  )
+```
+
+## Convert coordinates
+
+threeBrain plots electrodes in tkRAS space (proprietary to Freesurfer), so we need to transform the LeGUI output from its MNI152 space into MNI305, and then into tkrRAS.
+
+```{r}
+elec_info <- read.csv(elec_file)
+mni152 <- elec_info[, c('MNI152_x', 
+                        'MNI152_y', 
+                        'MNI152_z')]
+
+## Convert from MNI152 to MNI305 by specifying the 
+## MNI305-to-MNI152 transform and doing the reverse:
+mni152 <- rbind(t(as.matrix(mni152)), 1)
+mni305 <- solve(threeBrain:::MNI305_to_MNI152) %*% mni152
+
+## Convert from MNI305 to tkrRAS by specifying the 
+## tkrRAS-to-MNI305 transform and doing the reverse:
+## (note that the order of matrix multiplication matters!)
+tkrRAS <- brain$Torig %*% solve(brain$Norig) %*% solve(brain$xfm) %*% mni305
+
+## Generate final electrode coordinates
+tkrRAS <- data.frame(
+  Coord_x = tkrRAS[1, ],
+  Coord_y = tkrRAS[2, ],
+  Coord_z = tkrRAS[3, ],
+  MNI305_x = mni305[1, ],
+  MNI305_y = mni305[2, ],
+  MNI305_z = mni305[3, ]
+)
+
+elec_info <- cbind(elec_info, tkrRAS)
+```
+
+## Export
+
+Save for use in threeBrain/RAVE and MRIcroGL
+
+```{r}
+elec_info <- elec_info[, c('Electrode', 'Coord_x',
+                           'Coord_y', 'Coord_z',
+                           'Label', 'MNI305_x', 
+                           'MNI305_y', 'MNI305_z')]
+
+write.csv(elec_info, 
+          output_path, 
+          row.names = FALSE)
+```

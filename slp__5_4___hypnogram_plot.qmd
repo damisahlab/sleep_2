@@ -1,0 +1,179 @@
+---
+title: "Hypnogram Plot"
+format: html
+editor: visual
+jupyter: python3
+---
+
+## Configuration
+
+```{r, setup, include = FALSE}
+knitr::opts_knit$set(root.dir = 'D:/Layton')
+```
+
+```{r}
+library(tidyverse)
+library(data.table)
+library(readxl)
+```
+
+## Parameters
+
+```{r}
+# hypno_path <- 'Cache/Subject01/S01_hypnogram.csv'
+# avEEG_path <- 'Data/Subject01/S01_avEEG_Feb02_overnight.xlsx'
+# rds_path <- 'Cache/Subject01/S01_hypnogram.RDS'
+# output_path <- 'Results/S01_hypnogram.svg'
+# sampling_freq = 256
+# start_time <- as_datetime("2022-02-02 00:41:15") # actually 00:41:39, but we need to shoehorn in the first observation
+# stop_time <- as_datetime("2022-02-02 02:41:41")
+
+hypno_path <- 'Cache/Subject02/Apr26/S02_Apr26_hypnogram.csv'
+avEEG_path <- 'Data/Subject02/S02_avEEG_Apr26_overnight.xlsx'
+rds_path <- 'Cache/Subject02/Apr26/S02_hypnogram.RDS'
+output_path <- 'Results/S02_Apr26_hypnogram.svg'
+sampling_freq = 256
+start_time <- as_datetime("2023-04-26 21:59:20")
+stop_time <- as_datetime("2023-04-27 03:37:20")
+
+# hypno_path <- 'Cache/Subject02/Apr27/S02_Apr27_hypnogram.csv'
+# avEEG_path <- 'Data/Subject02/S02_avEEG_Apr27_overnight.xlsx'
+# rds_path <- 'Cache/Subject02/Apr27/S02_hypnogram.RDS'
+# output_path <- 'Results/S02_Apr27_hypnogram.svg'
+# start_time <- as_datetime("2023-04-27 23:37:50")
+# stop_time <- as_datetime("2023-04-28 04:13:50")
+# sampling_freq = 256
+```
+
+## Munging
+
+Format hypnogram for plotting by assigning unit group ID's to each continuous run of sleep stage. Then find the first and last samples for each group. Then pivot this so each row is one group (continuous run) with a start and end time.
+
+```{r}
+hypno <- read.csv(hypno_path, header = FALSE)
+colnames(hypno) <- c('stage')
+hypno$stage <- factor(hypno$stage,
+                      levels = c(3, 2, 1, 4, 0, -1, -2),
+                      labels = c('N3', 'N2', 'N1', 'W/REM',
+                                 'W/REM', 'Artifact',
+                                 'Unscored'))
+hypno$time <- row.names(hypno)
+
+last_sample <- nrow(hypno) # for use with avEEG
+
+hypno <- 
+  hypno %>%
+  # data.table::rleid() is the best!
+  mutate(run_id = rleid(stage)) %>%
+  group_by(run_id) %>%
+  mutate(time = as.numeric(time)) %>%
+  summarize(stage = first(stage),
+            start = min(time),
+            stop = max(time)) %>%
+  select(-run_id) %>%
+  pivot_longer(!stage, 
+               names_to = 'dummy', 
+               values_to = 'time') %>%
+  select(-dummy)
+```
+
+OLD METHOD:
+
+```{r}
+# # Format the avEEG behavioral data for plotting by converting timestamps to samples. 
+# # Note that this will not align with the hypnogram unless the first and last timestamp 
+# # of the avEEG data exactly corresponds to the start of the EEG recording! 
+# # If the avEEG data terminates before the end of the hypnogram, 
+# # the last value can be padded by the last sample of the hypnogram.
+# av <-
+#   read_excel(avEEG_path) %>%
+#   mutate(datetime = lubridate::as_datetime(date) + 
+#                     hms::as_hms(time)) %>%
+#   mutate(time = as.numeric(datetime)) %>%
+#   mutate(time = (time - min(time)) * sampling_freq) %>%
+#   mutate(behavior = ifelse(behavior == 1, 'Quiescent', 'Wakeful'),
+#          start = time, 
+#          stop = lead(time, default = last_sample) - 1) %>%
+#   select(-c(position, date, time)) %>%
+#   mutate(run_id = seq_len(n()))
+```
+
+NEW METHOD:
+
+```{r}
+av <- 
+  read_excel(avEEG_path) %>%
+  mutate(datetime = lubridate::as_datetime(date) + 
+                    hms::as_hms(time)) %>% 
+  select(-date, -time, -position) %>% 
+  mutate(behavior = ifelse(behavior == 1, 'Quiescent', 'Wakeful')) %>%
+  filter(datetime >= start_time, datetime <= stop_time)
+
+# Check if the first row needs to be added
+if(first(av$datetime) != start_time){
+  av <- av %>%
+    add_row(behavior = first(av$behavior), 
+            datetime = start_time, .before = 1)
+}
+
+# Check if the last row needs to be added
+if(last(av$datetime) != stop_time){
+  av <- av %>%
+    add_row(behavior = last(av$behavior), 
+            datetime = stop_time, .after = nrow(av))
+}
+
+av <- av %>%
+  mutate(sample = as.numeric(difftime(datetime, 
+                                      first(datetime), 
+                                      units = "secs")) * sampling_freq) %>%
+  select(-datetime) %>%
+  arrange(sample) %>%
+  mutate(sample_end = lead(sample))
+```
+
+## Plotting
+
+```{r}
+hypno_plot <- 
+  ggplot() + 
+  geom_line(data = hypno, 
+            aes_string(x = 'time', 
+                       y = 'stage', 
+                       group = 1)) + 
+  geom_rect(data = av, 
+            aes(xmin = sample, 
+                xmax = sample_end, 
+                ymin = 0, 
+                ymax = 5, 
+                fill = behavior),
+            alpha = 0.25) + 
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = c('#5abcd6', '#ff2500')) + 
+  labs(y = 'Stage') +
+  theme_minimal() + 
+  theme(legend.title = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 13),
+        axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 8),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_line(size = 0.3),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black', 
+                                    fill = NA, 
+                                    size = 0.5))
+```
+
+```{r}
+# Save as RDS object for later alignment
+saveRDS(hypno_plot, file = rds_path) 
+
+# Save SVG without legend
+p <- hypno_plot + theme(legend.position = 'none')
+p
+
+ggsave(file = output_path, width = 10, height = 1.5, 
+       dpi = 300)
+```

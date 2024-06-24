@@ -1,0 +1,164 @@
+---
+title: "Example Unit Timelines"
+format: html
+editor: visual
+jupyter: python3
+---
+
+## Configuration
+
+```{r, setup, include = FALSE}
+knitr::opts_knit$set(root.dir = 'Z:/Layton/Sleep_083023')
+```
+
+```{r}
+library(tidyverse)
+library(ggh4x)
+library(ggExtra)
+library(zoo)
+library(tune)
+library(gghighlight)
+```
+
+## Parameters
+
+Subject01, Feb02
+
+```{r}
+short_scatter_path <- 'Cache/Subject01/Feb02/short_scatter.csv'
+timeline_out_path <- 'Results/S01_example_timeline.svg'
+channel_pick <- 'ROF1' #'RA6'
+unit_picks <- c('S01_Ch195_neg_Unit3', 'S01_Ch200_neg_Unit2', 'S01_Ch205_neg_Unit3')
+```
+
+Subject05, Jul11
+
+```{r}
+# short_scatter_path <- 'Cache/Subject05/Jul11/short_scatter.csv'
+# timeline_out_path <- 'Results/S05_Jul11_example_timeline.svg'
+# channel_pick <- 'LAM1'
+# unit_picks <- c('S05_Ch194_neg_Unit5', 'S05_Ch193_neg_Unit2', 'S05_Ch196_neg_Unit5')
+```
+
+Subject05, Jul12
+
+```{r}
+# short_scatter_path <- 'Cache/Subject05/Jul12/short_scatter.csv'
+# timeline_out_path <- 'Results/S05_Jul12_example_timeline.svg'
+# channel_pick <- 'LOF9'
+# unit_picks <- c('S05_Ch195_neg_Unit5', 'S05_Ch196_neg_Unit2', 'S05_Ch199_neg_Unit2')
+```
+
+Subject05, Jul13
+
+```{r}
+# short_scatter_path <- 'Cache/Subject05/Jul13/short_scatter.csv'
+# timeline_out_path <- 'Results/S05_Jul13_example_timeline.svg'
+# channel_pick <- 'LOF1'
+# unit_picks <- c('S05_Ch198_neg_Unit4', 'S05_Ch195_neg_Unit5', 'S05_Ch199_neg_Unit2')
+```
+
+## Munging
+
+```{r}
+data <- read.csv(short_scatter_path)
+unique(data[,c('chan_id', 'region')])
+```
+
+```{r}
+timeline_data <- data[(data$chan_id == channel_pick) & 
+                        (data$unit_id %in% unit_picks[1]),]
+
+timeline_data <- 
+  timeline_data %>%
+  select(epoch, swa_zscore, sw_zscore) %>%
+  pivot_longer(cols = c(swa_zscore, sw_zscore),
+               names_to = 'metric',
+               values_to = 'zscore') %>%
+  mutate(metric = factor(metric,
+                         levels = c('swa_zscore',
+                                    'sw_zscore'))) %>%
+  mutate(metric = fct_recode(metric, 
+                              'SWA' = 'swa_zscore', 
+                              'SW' = 'sw_zscore')) %>%
+  mutate(big_epoch = floor(epoch / 30)) %>%
+  group_by(metric, big_epoch) %>%
+  summarize(mean = mean(zscore),
+            sd = sd(zscore),
+            ct = n()) %>%
+  mutate(se = sd / sqrt(ct))
+```
+
+```{r}
+unit_data <- data[(data$chan_id == channel_pick) & 
+                        (data$unit_id %in% unit_picks),]
+
+unit_data <- 
+  unit_data %>%
+  select(epoch, unit_id, fr_zscore) %>%
+  group_by(unit_id) %>%
+  pivot_longer(cols = c(fr_zscore),
+               names_to = 'metric',
+               values_to = 'zscore') %>%
+  ungroup() %>%
+  mutate(metric = unit_id,
+         big_epoch = floor(epoch / 30)) %>% 
+  group_by(metric, big_epoch) %>%
+  summarize(mean = mean(zscore),
+            sd = sd(zscore),
+            ct = n()) %>%
+  mutate(se = sd / sqrt(ct))
+```
+
+```{r}
+timeline_data <- 
+  rbind(timeline_data, unit_data) %>%
+  mutate(metric = factor(metric) %>% 
+  fct_relevel('SWA', 'SW')) %>% 
+  mutate(hex_color = if_else(metric %in% c('SW', 'SWA'), 
+                             '#335289', 'black'))
+```
+
+## Plotting
+
+```{r}
+ggplot(data = timeline_data, 
+       aes(x = big_epoch, y = mean, color = hex_color)) +
+  geom_rect(data = filter(timeline_data, metric %in% c("SW", "SWA")),
+            aes(xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf),
+            fill = '#D2DDEE', alpha = 0.05, inherit.aes = FALSE) +
+  geom_line(linewidth = 0.5,
+            alpha = 0.50) +
+  geom_pointrange(aes(ymin = mean - se, 
+                      ymax = mean + se),
+                  fatten = 0.75) + 
+  facet_grid(fct_rev(metric) ~ ., 
+             scales = 'free', 
+             switch = 'y') + 
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0),
+                     breaks = scales::pretty_breaks(n = 2)) +
+  scale_color_identity() + 
+  labs(x = 'Time', 
+       y = 'Z-Score ') +
+  theme_minimal() + 
+  theme(legend.position = 'None', 
+        strip.text = element_text(size = 14),
+        strip.placement = "outside",
+        axis.title = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_line(color = "black"),
+        panel.spacing = unit(0, 'lines'),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black', 
+                                    fill = NA, 
+                                    size = 1))
+```
+
+```{r}
+ggsave(file = timeline_out_path, 
+       width = 4.25, height = 3.5, 
+       dpi = 300, limitsize = FALSE)
+```

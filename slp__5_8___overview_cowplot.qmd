@@ -1,0 +1,147 @@
+---
+title: "wat"
+format: html
+editor: visual
+---
+
+## Configuration
+
+```{r, setup, include = FALSE}
+knitr::opts_knit$set(root.dir = 'G:/My Drive/Residency/Research/Lab - Damisah/Project - Sleep/Revisions')
+```
+
+```{r}
+library(tidyverse)
+library(cowplot)
+```
+
+## Parameters
+
+If you get errors when trying to display the plots (especially anything related to "scales_add_default()"), it is because the RDS files have to have been exported from environments using the same exact version of ggplot2 that you are using when you load the RDS file back into the R environment. So if you used ggplot2 version 3.4.2 to export the ggplot into an RDS file, then you have to have ggplot2 version 3.4.2 in your environment when you load the RDS file again, or it will not display properly.
+
+```{r}
+# hypno <- readRDS('Cache/S01_Feb02_hypnogram.RDS')
+# scalp <- readRDS('Cache/S01_Feb02_scalp_spectrogram.RDS')
+# iceeg <- readRDS('Cache/S01_Feb02_iceeg_spectrogram.RDS')
+# swa <- readRDS('Cache/S01_Feb02_SWA.RDS')
+# #sw <- readRDS('Cache/S01_Feb02_SW.RDS')
+# cspikes <- readRDS('Cache/S01_Feb02_color_spikes.RDS')
+# pca <- readRDS('Cache/S01_Feb02_pca_spikes.RDS')
+# output_path <- 'Results/S01_Feb02_overview_plot.svg'
+# hypno_legend_path <- 'Results/S01_Feb02_hypno_legend.svg'
+# scalp_legend_path <- 'Results/S01_Feb02_scalp_legend.svg'
+# iceeg_legend_path <- 'Results/S01_Feb02_iceeg_legend.svg'
+# swa_legend_path <- 'Results/S01_Feb02_swa_legend.svg'
+# #sw_legend_path <- 'Results/S01_Feb02_sw_legend.svg'
+# cspikes_legend_path <- 'Results/S01_Feb02_cspikes_legend.svg'
+# pca_legend_path <- 'Results/S01_Feb02_pca_legend.svg'
+# 
+# hypno <- readRDS('Cache/S05_Jul11_hypnogram.RDS')
+# scalp <- readRDS('Cache/S05_Jul11_scalp_spectrogram.RDS')
+# iceeg <- readRDS('Cache/S05_Jul11_iceeg_spectrogram.RDS')
+# swa <- readRDS('Cache/S05_Jul11_SWA.RDS')
+# #sw <- readRDS('Cache/S05_Jul11_SW.RDS')
+# cspikes <- readRDS('Cache/S05_Jul11_color_spikes.RDS')
+# pca <- readRDS('Cache/S05_Jul11_pca_spikes.RDS')
+# output_path <- 'Results/S05_Jul11_overview_plot.svg'
+# hypno_legend_path <- 'Results/S05_Jul11_hypno_legend.svg'
+# scalp_legend_path <- 'Results/S05_Jul11_scalp_legend.svg'
+# iceeg_legend_path <- 'Results/S05_Jul11_iceeg_legend.svg'
+# swa_legend_path <- 'Results/S05_Jul11_swa_legend.svg'
+# #sw_legend_path <- 'Results/S05_Jul11_sw_legend.svg'
+# cspikes_legend_path <- 'Results/S05_Jul11_cspikes_legend.svg'
+# pca_legend_path <- 'Results/S05_Jul11_pca_legend.svg'
+
+hypno <- readRDS('Cache/S05_Jul13_hypnogram.RDS')
+scalp <- readRDS('Cache/S05_Jul13_scalp_spectrogram.RDS')
+iceeg <- readRDS('Cache/S05_Jul13_iceeg_spectrogram.RDS')
+swa <- readRDS('Cache/S05_Jul13_SWA.RDS')
+#sw <- readRDS('Cache/S05_Jul13_SW.RDS')
+cspikes <- readRDS('Cache/S05_Jul13_color_spikes.RDS')
+pca <- readRDS('Cache/S05_Jul13_pca_spikes.RDS')
+output_path <- 'Results/S05_Jul13_overview_plot.svg'
+hypno_legend_path <- 'Results/S05_Jul13_hypno_legend.svg'
+scalp_legend_path <- 'Results/S05_Jul13_scalp_legend.svg'
+iceeg_legend_path <- 'Results/S05_Jul13_iceeg_legend.svg'
+swa_legend_path <- 'Results/S05_Jul13_swa_legend.svg'
+#sw_legend_path <- 'Results/S05_Jul13_sw_legend.svg'
+cspikes_legend_path <- 'Results/S05_Jul13_cspikes_legend.svg'
+pca_legend_path <- 'Results/S05_Jul13_pca_legend.svg'
+```
+
+### Main Plot
+
+```{r}
+hypno_2 <- hypno + theme(legend.position = 'none', 
+                         plot.margin = unit(c(0, 0, 0, 0), 'cm'))
+
+scalp_2 <- scalp + theme(legend.position = 'none', 
+                         plot.margin = unit(c(0, 0, 0, 0), 'cm'))
+
+iceeg_2 <- iceeg + theme(legend.position = 'none', 
+                         plot.margin = unit(c(0, 0, 0, 0), 'cm'))
+
+swa_2 <- swa + theme(legend.position = 'none', 
+                     plot.margin = unit(c(0, 0, 0, 0), 'cm'))
+
+#sw_2 <- sw + theme(legend.position = 'none', 
+#                   plot.margin = unit(c(0, 0, 0, 0), 'cm'))
+
+cspikes_2 <- cspikes + theme(legend.position = 'none', 
+                             plot.margin = unit(c(0, 0, 0, 0), 'cm'))
+
+pca_2 <- pca + theme(legend.position = 'none', 
+                     plot.margin = unit(c(0, 0, 0, 0), 'cm'))
+```
+
+### Export
+
+```{r}
+# # Original with detected SW
+# plot_grid(hypno_2, scalp_2, iceeg_2, swa_2, sw_2, cspikes_2, pca_2, 
+#           ncol = 1, align = 'hv', axis = 'lr',
+#           rel_heights = c(0.75, 1, 1, 0.5, 0.5, 1.5, 0.4))
+
+# ggsave(file = output_path, width = 7, height = 5, 
+#        dpi = 300, limitsize = FALSE)
+
+# Revision without detected SW
+plot_grid(hypno_2, scalp_2, iceeg_2, swa_2, cspikes_2, pca_2, 
+          ncol = 1, align = 'hv', axis = 'lr',
+          rel_heights = c(0.75, 1, 1, 0.75, 1.5, 0.5))
+
+ggsave(file = output_path, width = 7, height = 4.5, 
+       dpi = 300, limitsize = FALSE)
+```
+
+### Legends
+
+```{r}
+legend <- cowplot::get_legend(hypno)
+legend_plot <- ggdraw() + draw_plot(legend)
+ggsave(filename = hypno_legend_path, plot = legend_plot, device = 'svg')
+
+legend <- cowplot::get_legend(scalp)
+legend_plot <- ggdraw() + draw_plot(legend)
+ggsave(filename = scalp_legend_path, plot = legend_plot, device = 'svg')
+
+legend <- cowplot::get_legend(iceeg)
+legend_plot <- ggdraw() + draw_plot(legend)
+ggsave(filename = iceeg_legend_path, plot = legend_plot, device = 'svg')
+
+legend <- cowplot::get_legend(swa)
+legend_plot <- ggdraw() + draw_plot(legend)
+ggsave(filename = swa_legend_path, plot = legend_plot, device = 'svg')
+
+#legend <- cowplot::get_legend(sw)
+#legend_plot <- ggdraw() + draw_plot(legend)
+#ggsave(filename = sw_legend_path, plot = legend_plot, device = 'svg')
+
+legend <- cowplot::get_legend(cspikes)
+legend_plot <- ggdraw() + draw_plot(legend)
+ggsave(filename = cspikes_legend_path, plot = legend_plot, device = 'svg')
+
+legend <- cowplot::get_legend(pca)
+legend_plot <- ggdraw() + draw_plot(legend)
+ggsave(filename = pca_legend_path, plot = legend_plot, device = 'svg')
+```

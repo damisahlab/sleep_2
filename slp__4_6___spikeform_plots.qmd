@@ -1,0 +1,173 @@
+---
+title: "Spikeform Plots"
+format: html
+editor: visual
+jupyter: python3
+---
+
+## Configuration
+
+```{r, setup, include = FALSE}
+knitr::opts_knit$set(root.dir = 'Z:/Layton/Sleep_083023')
+```
+
+```{r}
+library(tidyverse)
+library(plotly)
+```
+
+## Parameters
+
+```{r}
+form_path <- 'Cache/Subject01/Feb02/S01_spikeforms.csv'
+log_path <- 'Cache/Subject01/Feb02/S01_logdensity_forms.csv'
+plot_path <- 'Results/S01_spikeforms_CLA_Left.svg'
+plot_path_pixel <- 'Results/S01_spikeforms_CLA_Left.png'
+recording_length <- 2 # in hours
+selected_region <- 'CLA'
+selected_laterality <- 'left'
+```
+
+```{r}
+# CLA Right: 12, 8
+# CLA Left: 6, 4
+# ACC Right: 5, 4
+# ACC Left: 9, 7
+
+# S01 Feb02, Right CLA
+#svg_width = 6
+#svg_height = 4
+
+# S01 Feb02, Left CLA
+svg_width = 3.1
+svg_height = 2.65
+
+px_width = svg_width * 4 * 100
+px_height = svg_height * 4 * 100
+```
+
+## Munging
+
+```{r}
+# Log density data
+log_data <- 
+  read.csv(log_path) %>%
+  select(time_point, amplitude, log_density, unit_id, 
+         unit_region, unit_laterality) %>%
+  filter(unit_region == selected_region,
+         unit_laterality == selected_laterality) %>%
+  # The data and log_data objects are offset by time_point = 0.5 
+  # when plotting, so you need to correct for this:
+  mutate(time_point = time_point + 0.5) %>%
+  # Convert samples to milliseconds (30 kHz sampling rate)
+  mutate(time_point = ((time_point) / 30))
+
+# You need to specify the height or else you'll get
+# a bunch of lines with empty space in between. The
+# python script is set to create 100 bins, so you just
+# need to find the height of each bin.
+height <- (range(log_data$amplitude)[2] - range(log_data$amplitude)[1]) / 100
+
+# Create unit-specific Count/ISI borders for plotting
+borders <- 
+  log_data %>%
+  select(unit_id, amplitude) %>%
+  group_by(unit_id) %>%
+  summarise(y_ct = min(amplitude) + 0.20 * (max(amplitude) - min(amplitude)),
+         y_isi = min(amplitude) + 0.10 * (max(amplitude) - min(amplitude)),
+         y_rect_min = min(amplitude) + 0.02 * (max(amplitude) - min(amplitude)),
+         y_rect_max = min(amplitude) + 0.25 * (max(amplitude) - min(amplitude)))
+
+# Average waveform data
+data <- 
+  read.csv(form_path) %>%
+  select(time_point, amplitude, number, unit_laterality, 
+         unit_region, unit_id, count, isi) %>%
+  # Convert samples to milliseconds (30 kHz sampling rate)
+  # and convert spike count to firing rate (Hz)
+  mutate(time_point = ((time_point) / 30),
+         count = count / (recording_length * 60 * 60)) %>%
+  # Generate label strings for the plot
+  mutate(ct_label = paste0(round(count, digits = 1), ' Hz'),
+         isi_label = paste0('ISI ', 
+                            round(isi * 100, digits = 1), '%')) %>%
+  filter(unit_region == selected_region,
+         unit_laterality == selected_laterality) %>%
+  left_join(borders, by = 'unit_id')
+```
+
+## Plotting
+
+```{r}
+plot <- 
+  ggplot(data, aes(x = time_point, y = amplitude)) + 
+  # geom_tile(data = log_data, 
+  #           aes(x = time_point, y = amplitude, 
+  #               color = log_density, fill = log_density), 
+  #           height = height, interpolate = TRUE) +
+  geom_raster(data = log_data, 
+          aes(x = time_point, y = amplitude, 
+              color = log_density, fill = log_density), 
+          interpolate = TRUE) +
+  geom_line(linewidth = 0.25,
+            color = 'blue') + 
+  geom_rect(aes(xmin = 1.5, xmax = 2, 
+                ymin = y_rect_min, 
+                ymax = y_rect_max),
+            linewidth = 0.15,
+            color = 'black',
+            fill = 'white') + 
+  geom_text(aes(x = 1.75, 
+                y = y_ct, 
+                label = ct_label),
+            size = 1.5) + 
+  geom_text(aes(x = 1.75, 
+                y = y_isi, 
+                label = isi_label),
+            size = 1.5) + 
+  #stat_density_2d(geom = 'tile',
+  #                aes(fill = after_stat(ndensity)),
+  #                contour = FALSE) + 
+  #stat_summary(fun = mean, 
+  #             color = 'black', 
+  #             geom = 'line') + 
+  scale_color_gradientn(colors = c('white',
+                               '#ADD8E6',
+                               '#86C5DA'),
+                    values = c(0, 0.5, 1)) +
+  scale_fill_gradientn(colors = c('white',
+                                 '#ADD8E6',
+                                 '#86C5DA'),
+                      values = c(0, 0.5, 1)) +
+  facet_wrap(unit_id ~ ., scales = 'free') + 
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  #coord_cartesian(ylim = c(-100, 100)) + 
+  theme_minimal() + 
+  theme(legend.position = 'none',
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.x = element_text(size = 6),
+        axis.text.y = element_text(size = 6),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        strip.text = element_text(size = 6),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(color = 'black', 
+                                    fill = NA, 
+                                    size = 0.5))
+
+#ggplotly(plot, tooltip = 'text')
+```
+
+```{r}
+plot
+
+ggsave(file = plot_path, width = svg_width, height = svg_height, dpi = 300)
+
+# For space issues:
+ggsave(file = plot_path_pixel, 
+       width = px_width, height = px_height, 
+       units = 'px', limitsize = FALSE)
+```

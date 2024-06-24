@@ -1,0 +1,446 @@
+---
+title: "Firing Rate Scatterplots"
+format: html
+editor: visual
+jupyter: python3
+---
+
+## Configuration
+
+```{r, setup, include = FALSE}
+knitr::opts_knit$set(root.dir = 'Z:/Layton/Sleep_083023')
+```
+
+```{r}
+library(tidyverse)
+library(ggh4x)
+library(ggExtra)
+library(zoo)
+library(tune)
+library(gghighlight)
+```
+
+## Parameters
+
+37 + 30 + 26 + 29
+
+```{r}
+long_path <- c('Cache/Subject01/Feb02/long_scatter.csv',
+               'Cache/Subject05/Jul11/long_scatter.csv',
+               'Cache/Subject05/Jul12/long_scatter.csv',
+               'Cache/Subject05/Jul13/long_scatter.csv')
+
+short_path <- c('Cache/Subject01/Feb02/short_scatter.csv',
+                'Cache/Subject05/Jul11/short_scatter.csv',
+                'Cache/Subject05/Jul12/short_scatter.csv',
+                'Cache/Subject05/Jul13/short_scatter.csv')
+
+stage_out_path <- 'Results/Combo_scatterplot_stage.svg'
+sws_out_path <- 'Results/Combo_scatterplot_sws.svg'
+swa_out_path <- 'Results/Combo_scatterplot_swa.svg'
+
+micro_regions <- c('CLA', 'ACC', 'AMY')
+micro_colors <- c('#E28DB8', '#A67A77', '#7BA387')
+```
+
+## Munging
+
+```{r}
+# Long scatterplot data (sleep stage)
+long_data <- data.frame()
+
+for(path in long_path){
+  
+  # Extract date from file path
+  date <- gsub(".*/(.*)/.*\\.csv$", "\\1", path)
+  
+  temp_data <- 
+    read.csv(path) %>%
+    select(unit_id, unit_region, unit_laterality, fr, stage) %>%
+    mutate(unit_id = paste(unit_id, date, sep="_"))
+  
+  long_data <- rbind(long_data, temp_data)
+  
+}
+
+stage_data <-
+  long_data %>%
+  mutate(unit_region = as.factor(unit_region)) %>%
+  mutate(unit_region = fct_relevel(unit_region, micro_regions)) %>%
+  mutate(stage = ifelse(stage == 1, 'n23', 'not_n23')) %>%
+  group_by(unit_id, unit_region, stage) %>%
+  summarize(FR = mean(fr),
+            logFR = log2(mean(fr))) %>%
+  pivot_wider(id_cols = c(unit_id, unit_region),
+              names_from = c(stage),
+              values_from = c(logFR))
+
+# Short scatterplot data (SWA, SWS)
+short_data <- data.frame()
+
+for(path in short_path){
+  
+  # Extract date from file path
+  date <- gsub(".*/(.*)/.*\\.csv$", "\\1", path)
+  
+  temp_data <- 
+    read.csv(path) %>%
+    select(unit_id, unit_region, unit_laterality, fr, swa_zscore, sws) %>%
+    mutate(unit_id = paste(unit_id, date, sep="_"))
+
+  short_data <- rbind(short_data, temp_data)
+  
+}
+
+sws_data <-
+  short_data %>%
+  mutate(unit_region = as.factor(unit_region)) %>%
+  mutate(unit_region = fct_relevel(unit_region, micro_regions)) %>%
+  mutate(SWS = case_when(sws >= mean(sws) ~ 'SWS',
+                          sws == 0 ~ 'noSWS',
+                          TRUE ~ 'midSWS')) %>% 
+  group_by(unit_id, unit_region, SWS) %>%
+  summarize(FR = mean(fr),
+            logFR = log2(mean(fr))) %>%
+  pivot_wider(id_cols = c(unit_id, unit_region),
+              names_from = c(SWS),
+              values_from = c(logFR))
+
+swa_data <- 
+  short_data %>%
+  mutate(unit_region = as.factor(unit_region)) %>%
+  mutate(unit_region = fct_relevel(unit_region, micro_regions)) %>%
+  mutate(SWA = case_when(
+    swa_zscore >= quantile(swa_zscore)[4] ~ 'SWA',
+    swa_zscore <= quantile(swa_zscore)[2] ~ 'noSWA',
+    TRUE ~ 'midSWA')) %>% 
+  group_by(unit_id, unit_region, SWA) %>%
+  summarize(FR = mean(fr),
+            logFR = log2(mean(fr))) %>%
+  pivot_wider(id_cols = c(unit_id, unit_region),
+              names_from = c(SWA),
+              values_from = c(logFR))
+```
+
+## Statistics
+
+```{r}
+# Sleep stage
+chisq_test_result_stage <- stage_data %>%
+  mutate(stats_group = ifelse(unit_region == "CLA", "CLA", "CTRL"),
+         triangle = ifelse(n23 > not_n23, "lower", "upper")) %>%
+  with(chisq.test(stats_group, triangle))
+
+print(chisq_test_result_stage)
+
+# SWA
+chisq_test_result_swa <- swa_data %>%
+  mutate(
+    stats_group = ifelse(unit_region == "CLA", "CLA", "CTRL"),
+    triangle = ifelse(SWA > noSWA, "lower", "upper")
+  ) %>%
+  with(chisq.test(stats_group, triangle))
+
+print(chisq_test_result_swa)
+
+# SWS
+chisq_test_result_sws <- sws_data %>%
+  mutate(
+    stats_group = ifelse(unit_region == "CLA", "CLA", "CTRL"),
+    triangle = ifelse(SWS > noSWS, "lower", "upper")
+  ) %>%
+  with(chisq.test(stats_group, triangle))
+
+print(chisq_test_result_sws)
+
+```
+
+## Sleep Stage Plot
+
+```{r}
+# Function to compute the mean and 95% CI
+compute_summary <- function(x) {
+  n <- length(x)
+  mu <- mean(x)
+  stderr <- sd(x)/sqrt(n)
+  ci_halfwidth <- stderr * qt(0.975, df = n-1)
+  return(data.frame(mean = mu, lower = mu - ci_halfwidth, upper = mu + ci_halfwidth))
+}
+```
+
+```{r}
+# Create a small dataset for the mini bar plot
+cla_data <- stage_data %>% filter(unit_region == "CLA")
+cla_counts <- data.frame(
+  condition = c("n23 > not_n23", "n23 <= not_n23"),
+  count = c(sum(cla_data$n23 > cla_data$not_n23), sum(cla_data$n23 <= cla_data$not_n23))
+)
+
+# Create the mini bar plot
+mini_bar_plot <- ggplot(cla_counts, aes(x = condition, y = count, fill = condition)) +
+  geom_bar(stat = "identity", aes(fill = condition)) +
+  geom_hline(yintercept = 0, color = "black", size = 1) +
+  geom_text(aes(label = count, y = count/2), 
+            vjust = 0.5, color = "black") +
+  scale_fill_manual(values = 
+         c("n23 > not_n23" = scales::alpha("gray", 0.5),
+         "n23 <= not_n23" = scales::alpha("gray", 0.5))) +
+  theme_void() +
+  theme(legend.position = "none")
+
+mini_bar_plot
+
+# Summary
+sum_data <- 
+  stage_data %>%
+  group_by(unit_region) %>%
+  summarise(across(c(x = n23, y = not_n23), 
+                   compute_summary, 
+                   .names = "{.col}_")) %>%
+  tidyr::unnest(cols = c(x_, y_), names_sep = "")
+
+# Plot
+stage_plot <- 
+  ggplot() +
+  geom_abline(slope = 1, 
+              intercept = 0,
+              linetype = 'dashed') + 
+  geom_point(data = stage_data, 
+             aes(x = n23, y = not_n23, 
+                 group = unit_region,
+                 color = unit_region),
+             size = 1.75, alpha = 0.5) +
+  annotation_custom(ggplotGrob(mini_bar_plot), 
+                    xmin = stage_data$n23 %>% min(), 
+                    xmax = stage_data$n23 %>% quantile(0.25), 
+                    ymin = stage_data$not_n23 %>% quantile(0.75), 
+                    ymax = stage_data$not_n23 %>% max()) + 
+  geom_linerange(data = sum_data,
+                 aes(y = y_mean,
+                     xmin = x_lower,
+                     xmax = x_upper,
+                     color = unit_region),
+                 linewidth = 1) +
+  geom_linerange(data = sum_data,
+                 aes(x = x_mean,
+                     ymin = y_lower,
+                     ymax = y_upper,
+                     color = unit_region),
+                 linewidth = 1) +
+  scale_discrete_manual(values = micro_colors,
+                        aesthetics = c('color')) + 
+  coord_obs_pred() + 
+  labs(x = 'log2 FR in NREM', 
+       y = 'log2 FR not in NREM') +
+  guides(colour = guide_legend(override.aes = list(size = 4))) + 
+  theme_minimal() + 
+  theme(legend.position = 'none',
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        axis.ticks = element_line(size = 0.4),
+        strip.text = element_text(size = 8),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black', 
+                                    fill = NA, 
+                                    size = 1))
+
+stage_plot <- ggMarginal(stage_plot, 
+                         type = 'histogram',
+                         groupColour = TRUE,
+                         groupFill = TRUE)
+
+stage_plot
+
+ggsave(file = stage_out_path, 
+       width = 4, height = 4, 
+       dpi = 300, limitsize = FALSE)
+```
+
+## Single SWS Plot
+
+```{r}
+# Create a small dataset for the mini bar plot
+sws_data_subset <- sws_data %>% filter(unit_region == "CLA")
+sws_counts <- data.frame(
+  condition = c("SWS > noSWS", "SWS <= noSWS"),
+  count = c(sum(sws_data_subset$SWS > sws_data_subset$noSWS), sum(sws_data_subset$SWS <= sws_data_subset$noSWS))
+)
+
+# Create the mini bar plot
+mini_bar_plot <- ggplot(sws_counts, aes(x = condition, y = count, fill = condition)) +
+  geom_bar(stat = "identity", aes(fill = condition)) +
+  geom_hline(yintercept = 0, color = "black", size = 1) +
+  geom_text(aes(label = count, y = count/2), 
+            vjust = 0.5, color = "black") +
+  scale_fill_manual(values = 
+         c("SWS > noSWS" = scales::alpha("gray", 0.5),
+         "SWS <= noSWS" = scales::alpha("gray", 0.5))) +
+  theme_void() +
+  theme(legend.position = "none")
+
+mini_bar_plot
+
+# Summary
+sum_data <- 
+  sws_data %>%
+  group_by(unit_region) %>%
+  summarise(across(c(x = SWS, y = noSWS), 
+                   compute_summary, 
+                   .names = "{.col}_")) %>%
+  tidyr::unnest(cols = c(x_, y_), names_sep = "")
+
+# Plot
+sws_plot <- 
+  ggplot() +
+  geom_abline(slope = 1, 
+              intercept = 0,
+              linetype = 'dashed') + 
+  geom_point(data = sws_data, 
+             aes(x = SWS, y = noSWS, 
+                 group = unit_region,
+                 color = unit_region),
+             size = 1.75, alpha = 0.5) +
+  annotation_custom(ggplotGrob(mini_bar_plot), 
+                    xmin = sws_data$SWS %>% min(), 
+                    xmax = sws_data$SWS %>% quantile(0.25), 
+                    ymin = sws_data$noSWS %>% quantile(0.75), 
+                    ymax = sws_data$noSWS %>% max()) + 
+  geom_linerange(data = sum_data,
+                 aes(y = y_mean,
+                     xmin = x_lower,
+                     xmax = x_upper,
+                     color = unit_region),
+                 linewidth = 1) +
+  geom_linerange(data = sum_data,
+                 aes(x = x_mean,
+                     ymin = y_lower,
+                     ymax = y_upper,
+                     color = unit_region),
+                 linewidth = 1) +
+  scale_discrete_manual(values = micro_colors,
+                        aesthetics = c('color')) + 
+  coord_obs_pred() + 
+  labs(x = 'log2 FR high SW presence', 
+       y = 'log2 FR no SW presence') +
+  guides(colour = guide_legend(override.aes = list(size = 4))) + 
+  theme_minimal() + 
+  theme(legend.position = 'none',
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        axis.ticks = element_line(size = 0.4),
+        strip.text = element_text(size = 8),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black', 
+                                    fill = NA, 
+                                    size = 1))
+
+sws_plot <- ggMarginal(sws_plot, 
+                       type = 'histogram',
+                       groupColour = TRUE,
+                       groupFill = TRUE)
+
+sws_plot
+
+ggsave(file = sws_out_path, 
+       width = 4, height = 4, 
+       dpi = 300, limitsize = FALSE)
+```
+
+## Single SWA Plot
+
+```{r}
+# Create a small dataset for the mini bar plot
+swa_data_subset <- swa_data %>% filter(unit_region == "CLA")
+swa_counts <- data.frame(
+  condition = c("SWA > noSWA", "SWA <= noSWA"),
+  count = c(sum(swa_data_subset$SWA > swa_data_subset$noSWA), sum(swa_data_subset$SWA <= swa_data_subset$noSWA))
+)
+
+# Create the mini bar plot
+mini_bar_plot <- ggplot(swa_counts, aes(x = condition, y = count, fill = condition)) +
+  geom_bar(stat = "identity", aes(fill = condition)) +
+  geom_hline(yintercept = 0, color = "black", size = 1) +
+  geom_text(aes(label = count, y = count/2), 
+            vjust = 0.5, color = "black") +
+  scale_fill_manual(values = 
+         c("SWA > noSWA" = scales::alpha("gray", 0.5),
+         "SWA <= noSWA" = scales::alpha("gray", 0.5))) +
+  theme_void() +
+  theme(legend.position = "none")
+
+mini_bar_plot
+
+# Summary
+sum_data <- 
+  swa_data %>%
+  group_by(unit_region) %>%
+  summarise(across(c(x = SWA, y = noSWA), 
+                   compute_summary, 
+                   .names = "{.col}_")) %>%
+  tidyr::unnest(cols = c(x_, y_), names_sep = "")
+
+# Plot
+swa_plot <- 
+  ggplot() +
+  geom_abline(slope = 1, 
+              intercept = 0,
+              linetype = 'dashed') + 
+  geom_point(data = swa_data, 
+             aes(x = SWA, y = noSWA, 
+                 group = unit_region,
+                 color = unit_region),
+             size = 1.75, alpha = 0.5) +
+  annotation_custom(ggplotGrob(mini_bar_plot), 
+                    xmin = swa_data$SWA %>% min(), 
+                    xmax = swa_data$SWA %>% quantile(0.25), 
+                    ymin = swa_data$noSWA %>% quantile(0.75), 
+                    ymax = swa_data$noSWA %>% max()) + 
+  geom_linerange(data = sum_data,
+                 aes(y = y_mean,
+                     xmin = x_lower,
+                     xmax = x_upper,
+                     color = unit_region),
+                 linewidth = 1) +
+  geom_linerange(data = sum_data,
+                 aes(x = x_mean,
+                     ymin = y_lower,
+                     ymax = y_upper,
+                     color = unit_region),
+                 linewidth = 1) +
+  scale_discrete_manual(values = micro_colors,
+                        aesthetics = c('color')) + 
+  coord_obs_pred() + 
+  labs(x = 'log2 FR high SWA', 
+       y = 'log2 FR low SWA') +
+  guides(colour = guide_legend(override.aes = list(size = 4))) + 
+  theme_minimal() + 
+  theme(legend.position = 'none',
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        axis.ticks = element_line(size = 0.4),
+        strip.text = element_text(size = 8),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black', 
+                                    fill = NA, 
+                                    size = 1))
+
+swa_plot <- ggMarginal(swa_plot, 
+                       type = 'histogram',
+                       groupColour = TRUE,
+                       groupFill = TRUE)
+
+swa_plot
+
+ggsave(file = swa_out_path, 
+       width = 4, height = 4, 
+       dpi = 300, limitsize = FALSE)
+```

@@ -1,0 +1,371 @@
+---
+title: "Recording Overview Subplots"
+format: html
+editor: visual
+---
+
+## Configuration
+
+```{r, setup, include = FALSE}
+knitr::opts_knit$set(root.dir = 'G:/My Drive/Residency/Research/Lab - Damisah/Project - Sleep/Revisions')
+```
+
+```{r}
+library(tidyverse)
+library(paletteer)
+library(viridis)
+library(wesanderson)
+```
+
+## Parameters
+
+```{r}
+# sw_path <- 'Data/S01_Feb02_epochs_10s_swa.csv'
+# spike_path <- 'Data/S01_Feb02_epochs_10s_spikes.csv'
+# spike_pca_path <- 'Data/S01_Feb02_epochs_10s_pca.csv'
+# swa_rds_path <- 'Cache/S01_Feb02_SWA.RDS'
+# #beta_rds_path <- 'Cache/S01_Feb02_Beta.RDS'
+# #sw_rds_path <- 'Cache/S01_Feb02_SW.RDS'
+# spike_rds_path <- 'Cache/S01_Feb02_spikes.RDS'
+# cspike_rds_path <- 'Cache/S01_Feb02_color_spikes.RDS'
+# pca_rds_path <- 'Cache/S01_Feb02_pca_spikes.RDS'
+# keep_channels <- c('RAI3', 'ROF1', 'RAI2', 'RA7', 'RPI11')
+# keep_channel_labels <- c('PFC', 'OFC', 'INS', 'TPL', 'PTL')
+
+# sw_path <- 'Data/S05_Jul11_epochs_10s_swa.csv'
+# spike_path <- 'Data/S05_Jul11_epochs_10s_spikes.csv'
+# spike_pca_path <- 'Data/S05_Jul11_epochs_10s_pca.csv'
+# swa_rds_path <- 'Cache/S05_Jul11_SWA.RDS'
+# #beta_rds_path <- 'Cache/S05_Jul11_Beta.RDS'
+# #sw_rds_path <- 'Cache/S05_Jul11_SW.RDS'
+# spike_rds_path <- 'Cache/S05_Jul11_spikes.RDS'
+# cspike_rds_path <- 'Cache/S05_Jul11_color_spikes.RDS'
+# pca_rds_path <- 'Cache/S05_Jul11_pca_spikes.RDS'
+# keep_channels <- c('LAC7', 'LAM1', 'LHC7', 'LOF1')
+# keep_channel_labels <- c('MFG', 'AMY', 'MTG', 'OFC')
+# 
+# sw_path <- 'Data/S05_Jul12_epochs_10s_swa.csv'
+# spike_path <- 'Data/S05_Jul12_epochs_10s_spikes.csv'
+# spike_pca_path <- 'Data/S05_Jul12_epochs_10s_pca.csv'
+# swa_rds_path <- 'Cache/S05_Jul12_SWA.RDS'
+# #beta_rds_path <- 'Cache/S05_Jul12_Beta.RDS'
+# #sw_rds_path <- 'Cache/S05_Jul12_SW.RDS'
+# spike_rds_path <- 'Cache/S05_Jul12_spikes.RDS'
+# cspike_rds_path <- 'Cache/S05_Jul12_color_spikes.RDS'
+# pca_rds_path <- 'Cache/S05_Jul12_pca_spikes.RDS'
+# keep_channels <- c('LAC7', 'LAM1', 'LHC7', 'LOF1')
+# keep_channel_labels <- c('MFG', 'AMY', 'MTG', 'OFC')
+
+sw_path <- 'Data/S05_Jul13_epochs_10s_swa.csv'
+spike_path <- 'Data/S05_Jul13_epochs_10s_spikes.csv'
+spike_pca_path <- 'Data/S05_Jul13_epochs_10s_pca.csv'
+swa_rds_path <- 'Cache/S05_Jul13_SWA.RDS'
+#beta_rds_path <- 'Cache/S05_Jul13_Beta.RDS'
+#sw_rds_path <- 'Cache/S05_Jul13_SW.RDS'
+spike_rds_path <- 'Cache/S05_Jul13_spikes.RDS'
+cspike_rds_path <- 'Cache/S05_Jul13_color_spikes.RDS'
+pca_rds_path <- 'Cache/S05_Jul13_pca_spikes.RDS'
+keep_channels <- c('LAC7', 'LAM1', 'LHC7', 'LOF1')
+keep_channel_labels <- c('MFG', 'AMY', 'MTG', 'OFC')
+```
+
+```{r}
+#unit_side <- 'right'
+micro_regions <- c('CLA','AMY', 'ACC')
+#region_colors <- c('#E28DB8', '#7BA387', '#A67A77')
+region_colors <- c('#5C92C0', '#E69978', '#80BA55')
+```
+
+## Munging
+
+```{r}
+sw <- 
+  read.csv(sw_path) %>% 
+  group_by(channel) %>% 
+  mutate(sw_perc = sw_ratio * 100) %>%
+  mutate(swa = zlog_power#, 
+         #beta = beta_zlog_power#,
+         #sws = (sw_ratio - mean(sw_ratio)) / sd(sw_ratio)
+         )
+```
+
+```{r}
+# Select kept channels and rename
+d <- sw[sw$channel %in% keep_channels,]
+
+d$channel <- factor(d$channel,
+                    levels = keep_channels,
+                    labels = keep_channel_labels)
+
+# Select all units
+spikes <- 
+  read.csv(spike_path) %>%
+  #filter(unit_laterality == unit_side) %>%
+  group_by(unit_id) %>%
+  mutate(zfr = (fr - mean(fr)) / sd(fr))
+
+# Wes Anderson color palette
+wa_palette <- wes_palette("Zissou1", 100, type = "continuous")
+```
+
+## Beta Plot
+
+```{r}
+# beta_plot <- 
+#   ggplot(data = d, aes(x = epoch, y = channel)) + 
+#   geom_raster(aes(fill = beta)) + 
+#   #scale_fill_viridis(option = 'magma') + 
+#   #scale_fill_gradientn(colors = wa_palette) +
+#   scale_fill_gradientn(colors = c('white', '#ec1c4e')) + 
+#   #scale_fill_gradientn(colors = c('white', 
+#   #                              '#ebcc2a', 
+#   #                              '#f22300'),
+#   #                   # values must be between 0 - 1:
+#   #                   values = c(0, 0.5, 1)) + 
+#   scale_x_continuous(expand = c(0, 0)) +
+#   scale_y_discrete(limits = rev, 
+#                    expand = c(0, 0)) +
+#   labs(y = expression(beta), 
+#        fill = 'Z-Score') +
+#   theme_minimal() + 
+#   theme(axis.title.x = element_blank(),
+#         axis.title.y = element_text(size = 13),
+#         axis.text.x = element_blank(),
+#         axis.text.y = element_text(size = 6),
+#         axis.ticks.x = element_blank(),
+#         axis.ticks.y = element_line(size = 0.3),
+#         panel.grid.major = element_blank(),
+#         panel.grid.minor = element_blank(),
+#         panel.border = element_rect(colour = 'black', 
+#                                     fill = NA, 
+#                                     size = 1))
+# 
+# beta_plot
+```
+
+```{r}
+# Save as RDS object for later alignment
+# saveRDS(beta_plot, file = beta_rds_path) 
+```
+
+## SWA Plot
+
+```{r}
+swa_plot <- 
+  ggplot(data = d, aes(x = epoch, y = channel)) + 
+  geom_raster(aes(fill = swa)) + 
+  scale_fill_gradientn(colors = c('white', '#335289')) + # '#637abe'
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_discrete(limits = rev, 
+                   expand = c(0, 0)) +
+  labs(y = 'SWA', 
+       fill = 'Z-Score') +
+  theme_minimal() + 
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 13),
+        axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 6),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_line(size = 0.3),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black', 
+                                    fill = NA, 
+                                    size = 1))
+
+swa_plot
+```
+
+```{r}
+# Save as RDS object for later alignment
+saveRDS(swa_plot, file = swa_rds_path) 
+```
+
+## SW Plot
+
+```{r}
+# sw_plot <- 
+#   ggplot(data = d, aes(x = epoch, y = channel)) + 
+#   geom_raster(aes(fill = sw_ratio)) + 
+#   scale_fill_gradientn(colors = c('white', '#335289')) + # '#022953' 
+#   scale_x_continuous(expand = c(0, 0)) +
+#   scale_y_discrete(limits = rev, 
+#                    expand = c(0, 0)) +
+#   labs(y = 'SW', fill = 'Z-Score') +
+#   theme_minimal() + 
+#   theme(axis.title.x = element_blank(),
+#         axis.title.y = element_text(size = 13),
+#         axis.text.x = element_blank(),
+#         axis.text.y = element_text(size = 6),
+#         axis.ticks.x = element_blank(),
+#         axis.ticks.y = element_line(size = 0.3),
+#         panel.grid.major = element_blank(),
+#         panel.grid.minor = element_blank(),
+#         panel.border = element_rect(colour = 'black', 
+#                                     fill = NA, 
+#                                     size = 1))
+# 
+# sw_plot
+```
+
+```{r}
+# # Save as RDS object for later alignment
+# saveRDS(sw_plot, file = sw_rds_path) 
+```
+
+## Faceted Spike Plot
+
+```{r}
+# spike_min <- 0
+# spike_max <- 7.5
+```
+
+```{r}
+# spike_plot <- 
+#   spikes %>%
+#   mutate(unit_region = as.factor(unit_region)) %>%
+#   mutate(unit_region = fct_relevel(unit_region, micro_regions)) %>%
+#   ggplot(aes(x = epoch, y = reorder(unit_id, fr, mean))) + 
+#   geom_raster(aes(fill = zfr)) + 
+#   facet_grid(unit_region ~ .,
+#              scales = 'free',
+#              space = 'fixed', # 'free'
+#              switch = 'y') + 
+#   scale_fill_gradientn(colors = c('white', 'black'),
+#                        limit = c(spike_min, spike_max),
+#                        oob = scales::squish) +
+#   scale_x_continuous(expand = c(0, 0)) +
+#   scale_y_discrete(expand = c(0, 0)) +
+#   labs(fill = 'FR (z)') +
+#   theme_minimal() + 
+#   theme(legend.text = element_text(size = 10),
+#         strip.text = element_text(size = 13),
+#         axis.title.x = element_blank(),
+#         axis.title.y = element_blank(),
+#         axis.text.x = element_blank(),
+#         axis.text.y = element_blank(),
+#         axis.ticks.x = element_blank(),
+#         axis.ticks.y = element_blank(),
+#         panel.grid.major = element_blank(),
+#         panel.grid.minor = element_blank(),
+#         panel.border = element_rect(colour = 'black', 
+#                                     fill = NA, 
+#                                     size = 1))
+# 
+# spike_plot
+```
+
+```{r}
+# Save as RDS object for later alignment
+# saveRDS(spike_plot, file = spike_rds_path)
+```
+
+## Color Spike Plot
+
+```{r}
+spike_min <- 0
+spike_max <- 3
+```
+
+```{r}
+cspike_plot <- 
+  spikes %>%
+  mutate(unit_region = as.factor(unit_region)) %>%
+  mutate(unit_region = fct_relevel(unit_region, micro_regions)) %>%
+  group_by(unit_id) %>%
+  mutate(mean_zfr = mean(zfr)) %>%
+  # Do this to properly order units by FR within regions
+  mutate(unit_order = case_when(
+          unit_region == 'CLA' ~ mean_zfr + 3000,
+          unit_region == 'AMY' ~ mean_zfr + 2000,
+          unit_region == 'ACC' ~ mean_zfr + 1000,
+          unit_region == 'aINS' ~ mean_zfr + 0)) %>% 
+  # Do this to crop min/max values for alpha
+  mutate(cropped_zfr = case_when(
+          (zfr >= spike_min) & (zfr <= spike_max) ~ zfr,
+          (zfr < spike_min) ~ spike_min,
+          (zfr > spike_max) ~ spike_max)) %>%
+  ggplot(aes(x = epoch, 
+             y = reorder(unit_id, unit_order))) + 
+  geom_raster(aes(fill = unit_region, 
+                  alpha = cropped_zfr)) + 
+  scale_fill_manual(values = region_colors) + 
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_discrete(expand = c(0, 0)) +
+  labs(y = 'MUA', fill = 'FR (z)') +
+  theme_minimal() + 
+  theme(legend.text = element_text(size = 10),
+        strip.text = element_text(size = 13),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 13),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black',
+                                    fill = NA,
+                                    size = 1))
+
+cspike_plot
+```
+
+```{r}
+# Save as RDS object for later alignment
+saveRDS(cspike_plot, file = cspike_rds_path)
+```
+
+## Unit PCA Plot
+
+```{r}
+pc_min <- 0
+pc_max <- 3
+```
+
+```{r}
+pca_plot <- 
+  read.csv(spike_pca_path) %>%
+  # Reformatting unit region
+  mutate(region = fct_recode(feat_PC, 
+                             CLA = 'cla_1', 
+                             AMY = 'amy_1',
+                             ACC = 'acc_1',
+                             INS = 'ins_1')) %>%
+  mutate(region = as.factor(region)) %>%
+  mutate(region = fct_relevel(region, micro_regions)) %>%
+  # Squeeze values into specified PC min/max
+  mutate(cropped_value = case_when(
+          (value >= pc_min) & (value <= pc_max) ~ value,
+          (value < pc_min) ~ pc_min,
+          (value > pc_max) ~ pc_max)) %>%
+  # Plotting
+  ggplot(aes(x = time, y = region)) + 
+  geom_raster(aes(fill = region, 
+                  alpha = cropped_value)) + 
+  scale_fill_manual(values = region_colors) + 
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_discrete(expand = c(0, 0), limits = rev) +
+  labs(y = 'MU PC1', fill = 'a.u.') +
+  theme_minimal() + 
+  theme(legend.text = element_text(size = 10),
+        strip.text = element_text(size = 13),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 13),
+        axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 6),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_line(size = 0.3),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = 'black',
+                                    fill = NA,
+                                    size = 1))
+
+pca_plot
+```
+
+```{r}
+# Save as RDS object for later alignment
+saveRDS(pca_plot, file = pca_rds_path)
+```
